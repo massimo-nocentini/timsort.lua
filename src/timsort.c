@@ -10,6 +10,11 @@
 #include <lua.h>
 #include <lauxlib.h>
 
+/* When we get into galloping mode, we stay there until both runs win less
+ * often than MIN_GALLOP consecutive times.  See listsort.txt for more info.
+ */
+#define MIN_GALLOP 7
+
 /* The maximum number of entries in a MergeState's pending-runs stack.
  * This is enough to sort arrays of size up to about
  *     32 * phi ** MAX_MERGE_PENDING
@@ -28,6 +33,20 @@ static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
     ob->ob_size = size;
 }
 #define Py_SET_SIZE(ob, size) _Py_SET_SIZE(_PyVarObject_CAST(ob), size)
+
+/* Comparison function: ms->key_compare, which is set at run-time in
+ * listsort_impl to optimize for various special cases.
+ * Returns -1 on error, 1 if x < y, 0 if x >= y.
+ */
+
+#define ISLT(X, Y) (*(ms->key_compare))(X, Y, ms)
+
+/* Compare X to Y via "<".  Goto "fail" if the comparison raises an
+   error.  Else "k" is set to true iff X<Y, and an "if (k)" block is
+   started.  It makes more sense in context <wink>.  X and Y are PyObject*s.
+*/
+#define IFLT(X, Y) if ((k = ISLT(X, Y)) < 0) goto fail;  \
+           if (k)
 
 typedef struct {
     PyObject ob_base;
@@ -108,6 +127,8 @@ struct s_MergeState {
      * of tuples. It may be set to safe_object_compare, but the idea is that hopefully
      * we can assume more, and use one of the special-case compares. */
     int (*tuple_elem_compare)(PyObject *, PyObject *, MergeState *);
+
+    PyListObject *listobject;
 };
 
 typedef struct {
@@ -130,41 +151,142 @@ typedef struct {
     Py_ssize_t allocated;
 
 	lua_State *L;
+    int table_absidx;
 } PyListObject;
 
 static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
-    return 0;
+    int table_absidx = ms->listobject->table_absidx;
+
+    lua_State *L = ms->listobject->L;
+ 
+    lua_pushvalue(L, table_absidx + 2);
+
+    int type;
+    
+    type = lua_geti(L, table_absidx, *v);
+    type = lua_geti(L, table_absidx, *w);
+
+    lua_call(L, 2, 1);
+
+    int lt = lua_toboolean(L, -1);
+
+    lua_pop(L, 1);
+
+    return lt;
 }
 
+/* Conceptually a MergeState's constructor. */
+static void
+merge_init(MergeState *ms, Py_ssize_t list_size)
+{
+    assert(ms != NULL);
+    ms->alloced = MERGESTATE_TEMP_SIZE;
+    ms->a.values = NULL;
+    ms->a.keys = ms->temparray;
+    ms->n = 0;
+    ms->min_gallop = MIN_GALLOP;
+}
 
-//static PyObject *list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse);
+/* Reverse a slice of a list in place, from lo up to (exclusive) hi. */
+static void reverse_slice(PyObject **lo, PyObject **hi)
+{
+    assert(lo && hi);
 
-/* An adaptive, stable, natural mergesort.  See listsort.txt.
- * Returns Py_None on success, NULL on error.  Even in case of error, the
- * list will be some permutation of its input state (nothing is lost or
- * duplicated).
+    --hi;
+    while (lo < hi) {
+        PyObject *t = *lo;
+        *lo = *hi;
+        *hi = t;
+        ++lo;
+        --hi;
+    }
+}
+
+/* Compute a good value for the minimum run length; natural runs shorter
+ * than this are boosted artificially via binary insertion.
+ *
+ * If n < 64, return n (it's too small to bother with fancy stuff).
+ * Else if n is an exact power of 2, return 32.
+ * Else return an int k, 32 <= k <= 64, such that n/k is close to, but
+ * strictly less than, an exact power of 2.
+ *
+ * See listsort.txt for more info.
  */
-/*[clinic input]
-list.sort
+static Py_ssize_t merge_compute_minrun(Py_ssize_t n)
+{
+    Py_ssize_t r = 0;           /* becomes 1 if any 1 bits are shifted off */
 
-    *
-    key as keyfunc: object = None
-    reverse: bool(accept={int}) = False
+    assert(n >= 0);
+    while (n >= 64) {
+        r |= n & 1;
+        n >>= 1;
+    }
+    return n + r;
+}
 
-Sort the list in ascending order and return None.
+/*
+Return the length of the run beginning at lo, in the slice [lo, hi).  lo < hi
+is required on entry.  "A run" is the longest ascending sequence, with
 
-The sort is in-place (i.e. the list itself is modified) and stable (i.e. the
-order of two equal elements is maintained).
+    lo[0] <= lo[1] <= lo[2] <= ...
 
-If a key function is given, apply it once to each list item and sort them,
-ascending or descending, according to their function values.
+or the longest descending sequence, with
 
-The reverse flag can be set to sort in descending order.
-[clinic start generated code]*/
-static int l_sort(lua_State *L) {
-	
-	MergeState ms;
+    lo[0] > lo[1] > lo[2] > ...
+
+Boolean *descending is set to 0 in the former case, or to 1 in the latter.
+For its intended use in a stable mergesort, the strictness of the defn of
+"descending" is needed so that the caller can safely reverse a descending
+sequence without violating stability (strict > ensures there are no equal
+elements to get out of order).
+
+Returns -1 in case of error.
+*/
+static Py_ssize_t
+count_run(MergeState *ms, PyObject **lo, PyObject **hi, int *descending)
+{
+    Py_ssize_t k;
+    Py_ssize_t n;
+
+    assert(lo < hi);
+    *descending = 0;
+    ++lo;
+    if (lo == hi)
+        return 1;
+
+    n = 2;
+    IFLT(*lo, *(lo-1)) {
+        *descending = 1;
+        for (lo = lo+1; lo < hi; ++lo, ++n) {
+            IFLT(*lo, *(lo-1))
+                ;
+            else
+                break;
+        }
+    }
+    else {
+        for (lo = lo+1; lo < hi; ++lo, ++n) {
+            IFLT(*lo, *(lo-1))
+                break;
+        }
+    }
+
+    return n;
+fail:
+    return -1;
+}
+
+static void reverse_sortslice(sortslice *s, Py_ssize_t n)
+{
+    reverse_slice(s->keys, &s->keys[n]);
+    if (s->values != NULL)
+        reverse_slice(s->values, &s->values[n]);
+}
+
+static void list_sort_impl(PyListObject *self, int reverse) {
+
+    MergeState ms;
     Py_ssize_t nremaining;
     Py_ssize_t minrun;
     sortslice lo;
@@ -173,17 +295,8 @@ static int l_sort(lua_State *L) {
     PyObject **final_ob_item;
     PyObject *result = NULL;            /* guilty until proved innocent */
     Py_ssize_t i;
-    PyObject **keys;
 
-	PyListObject *self; 
-	PyObject *keyfunc;
-
-	/* Initial checks */
-	assert(lua_istable(L, -3));
-	assert(lua_isfunction(L, -2));
-	assert(lua_isboolean(L, -1));
-
-	int reverse = lua_toboolean(L, -1);
+    ms.listobject = self;
 
     /* The list is temporarily made empty, so that mutations performed
      * by comparison functions can't affect the slice of memory we're
@@ -196,42 +309,13 @@ static int l_sort(lua_State *L) {
     Py_SET_SIZE(self, 0);
     self->ob_item = NULL;
     self->allocated = -1; /* any operation will reset it to >= 0 */
-
-    if (keyfunc == NULL) {
-        keys = NULL;
-        lo.keys = saved_ob_item;
-        lo.values = NULL;
-    }
-    else {
-        if (saved_ob_size < MERGESTATE_TEMP_SIZE/2)
-            /* Leverage stack space we allocated but won't otherwise use */
-            keys = &ms.temparray[saved_ob_size+1];
-        else {
-            keys = PyMem_Malloc(sizeof(PyObject *) * saved_ob_size);
-            if (keys == NULL) {
-                PyErr_NoMemory();
-                goto keyfunc_fail;
-            }
-        }
-
-        for (i = 0; i < saved_ob_size ; i++) {
-            keys[i] = PyObject_CallOneArg(keyfunc, saved_ob_item[i]);
-            if (keys[i] == NULL) {
-                for (i=i-1 ; i>=0 ; i--)
-                    Py_DECREF(keys[i]);
-                if (saved_ob_size >= MERGESTATE_TEMP_SIZE/2)
-                    PyMem_Free(keys);
-                goto keyfunc_fail;
-            }
-        }
-
-        lo.keys = keys;
-        lo.values = saved_ob_item;
-    }
+    
+    lo.keys = saved_ob_item;
+    lo.values = NULL;
 
     ms.key_compare = safe_object_compare;
 
-    merge_init(&ms, saved_ob_size, keys != NULL);
+    merge_init(&ms, saved_ob_size);
 
     nremaining = saved_ob_size;
     if (nremaining < 2)
@@ -240,8 +324,6 @@ static int l_sort(lua_State *L) {
     /* Reverse sort stability achieved by initially reversing the list,
     applying a stable forward sort, then reversing the final result. */
     if (reverse) {
-        if (keys != NULL)
-            reverse_slice(&keys[0], &keys[saved_ob_size]);
         reverse_slice(&saved_ob_item[0], &saved_ob_item[saved_ob_size]);
     }
 
@@ -261,8 +343,7 @@ static int l_sort(lua_State *L) {
             reverse_sortslice(&lo, n);
         /* If short, extend to min(minrun, nremaining). */
         if (n < minrun) {
-            const Py_ssize_t force = nremaining <= minrun ?
-                              nremaining : minrun;
+            const Py_ssize_t force = nremaining <= minrun ? nremaining : minrun;
             if (binarysort(&ms, lo, lo.keys + force, lo.keys + n) < 0)
                 goto fail;
             n = force;
@@ -282,9 +363,7 @@ static int l_sort(lua_State *L) {
     if (merge_force_collapse(&ms) < 0)
         goto fail;
     assert(ms.n == 1);
-    assert(keys == NULL
-           ? ms.pending[0].base.keys == saved_ob_item
-           : ms.pending[0].base.keys == &keys[0]);
+    assert(ms.pending[0].base.keys == saved_ob_item);
     assert(ms.pending[0].len == saved_ob_size);
     lo = ms.pending[0].base;
 
@@ -327,6 +406,48 @@ keyfunc_fail:
     }
     Py_XINCREF(result);
     return result;
+
+}
+
+/* An adaptive, stable, natural mergesort.  See listsort.txt.
+ * Returns Py_None on success, NULL on error.  Even in case of error, the
+ * list will be some permutation of its input state (nothing is lost or
+ * duplicated).
+ */
+/*[clinic input]
+list.sort
+
+    *
+    key as keyfunc: object = None
+    reverse: bool(accept={int}) = False
+
+Sort the list in ascending order and return None.
+
+The sort is in-place (i.e. the list itself is modified) and stable (i.e. the
+order of two equal elements is maintained).
+
+If a key function is given, apply it once to each list item and sort them,
+ascending or descending, according to their function values.
+
+The reverse flag can be set to sort in descending order.
+[clinic start generated code]*/
+static int l_sort(lua_State *L) {
+	
+	PyListObject self;
+
+    int nargs = lua_gettop(L);
+
+	/* Initial checks */
+	assert(lua_istable(L, -3));
+	assert(lua_isboolean(L, -2));
+    assert(lua_isfunction(L, -1));
+
+    self.L = L;
+    self.table_absidx = lua_absindex(L, -3);
+
+    int reverse = lua_toboolean(L, -1);
+
+    list_sort_impl(&self, reverse);
 
 	return 0;
 }
