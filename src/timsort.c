@@ -41,7 +41,7 @@ typedef struct {
 
 typedef struct {
     PyVarObject ob_base;
-
+    
     /* Vector of pointers to list elements.  list[0] is ob_item[0], etc. */
     PyObject **ob_item;
 
@@ -212,14 +212,31 @@ Py_LOCAL_INLINE(void) sortslice_copy_decr(sortslice *dst, sortslice *src)
 
 static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
+    assert(v != NULL);
+    assert(w != NULL);
+
+    int v_ = (*v);
+    int w_ = (*w);
+
+    
+    printf("Comparing %d and %d", v_, w_);
+    fflush( stdout );
+
     int table_absidx = ms->listobject->table_absidx;
 
     lua_State *L = ms->listobject->L;
  
+    assert(lua_istable(L, table_absidx));
+
     lua_pushvalue(L, table_absidx + 2);
 
-    lua_geti(L, table_absidx, *v);
-    lua_geti(L, table_absidx, *w);
+    assert(lua_isfunction(L, -1));
+
+    lua_geti(L, table_absidx, v_);
+    lua_geti(L, table_absidx, w_);
+
+    assert(lua_isnil(L, -2) == 0);
+    assert(lua_isnil(L, -1) == 0);
 
     lua_call(L, 2, 1);
 
@@ -297,8 +314,7 @@ elements to get out of order).
 
 Returns -1 in case of error.
 */
-static Py_ssize_t
-count_run(MergeState *ms, PyObject **lo, PyObject **hi, int *descending)
+static Py_ssize_t count_run(MergeState *ms, PyObject **lo, PyObject **hi, int *descending)
 {
     Py_ssize_t k;
     Py_ssize_t n;
@@ -350,8 +366,7 @@ static void reverse_sortslice(sortslice *s, Py_ssize_t n)
    Even in case of error, the output slice will be some permutation of
    the input (nothing is lost or duplicated).
 */
-static int
-binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **start)
+static int binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **start)
 {
     Py_ssize_t k;
     PyObject **l, **p, **r;
@@ -1038,7 +1053,7 @@ static int merge_collapse(MergeState *ms)
     return 0;
 }
 
-static PyObject * list_sort_impl(PyListObject *self, int reverse) {
+static PyListObject * list_sort_impl(PyListObject *self, int reverse) {
 
     MergeState ms;
     Py_ssize_t nremaining;
@@ -1047,8 +1062,9 @@ static PyObject * list_sort_impl(PyListObject *self, int reverse) {
     Py_ssize_t saved_ob_size, saved_allocated;
     PyObject **saved_ob_item;
     PyObject **final_ob_item;
-    PyObject *result = NULL;            /* guilty until proved innocent */
+    PyListObject *result = NULL;            /* guilty until proved innocent */
 
+    // get the reference to the context we are in, in particular to access the Lua state.
     ms.listobject = self;
 
     /* The list is temporarily made empty, so that mutations performed
@@ -1059,6 +1075,8 @@ static PyObject * list_sort_impl(PyListObject *self, int reverse) {
     saved_ob_size = Py_SIZE(self);
     saved_ob_item = self->ob_item;
     saved_allocated = self->allocated;
+    assert(saved_allocated == saved_ob_size);
+
     Py_SET_SIZE(self, 0);
     self->ob_item = NULL;
     self->allocated = -1; /* any operation will reset it to >= 0 */
@@ -1121,9 +1139,8 @@ static PyObject * list_sort_impl(PyListObject *self, int reverse) {
     lo = ms.pending[0].base;
 
 succeed:
-    result = NULL;
+    result = self;
 fail:
-
     if (self->allocated != -1 && result != NULL) {
         /* The user mucked with the list during the sort,
          * and we don't already have another error to report.
@@ -1150,7 +1167,7 @@ fail:
         }*/
         PyMem_Free(final_ob_item);
     }
-    //Py_XINCREF(result);
+
     return result;    
 }
 
@@ -1190,16 +1207,38 @@ static int l_sort(lua_State *L) {
     self.L = L;
     self.table_absidx = lua_absindex(L, -3);
 
-    int reverse = lua_toboolean(L, -1);
+    lua_len(L, self.table_absidx);  // push on the stack the number of elements to sort.
+    int nel = lua_tointeger(L, -1); // get that number.
+    lua_pop(L, 1);                  // clean the stack.
 
-    PyObject *result = list_sort_impl(&self, reverse);
+    self.ob_item = (PyObject **) malloc (sizeof(PyObject *) * nel);
+    self.ob_base.ob_size = nel;
+    self.allocated = nel;
+
+    for (int i = 0; i < nel; i++) {
+        self.ob_item[i] = &i;   // simply prepare the identity permutation.
+    }
+
+    int reverse = lua_toboolean(L, -2);
+
+    PyListObject *result = list_sort_impl(&self, reverse);
 
     if(result == NULL) {
-
+        // handle here the error.
     }
     
+    free(self.ob_item);
+    self.allocated = 0;
 
-	return 0;
+    lua_createtable(L, nel, 0);
+
+    for (int i = 0; i < nel; i++) {
+        int idx = *(self.ob_item[i]);
+        lua_geti(L, self.table_absidx, idx);
+        lua_seti(L, -2, i + 1);
+    }
+
+	return 1;
 }
 
 static const struct luaL_Reg timsort [] = {
