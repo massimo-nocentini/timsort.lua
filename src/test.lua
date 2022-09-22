@@ -10,7 +10,14 @@ end
 
 print(table.concat(tbl, ', '))
 
-local sorted = timsort.sort(tbl, false, function (a, b) return a < b end)
+local function C (a, b)
+
+    print('Comparing ' .. tostring(a) .. ' with ' .. tostring(b))
+    return a < b
+
+end
+
+local sorted = timsort.sort(tbl, false, C)
 
 --[[
 local sorted = {}

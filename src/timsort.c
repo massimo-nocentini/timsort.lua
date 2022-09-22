@@ -28,7 +28,7 @@
 /* Avoid malloc for small temp arrays. */
 #define MERGESTATE_TEMP_SIZE 256
 
-typedef int  PyObject;
+typedef struct { int idx; }  PyObject;
 
 typedef intptr_t  Py_ssize_t;
 
@@ -215,12 +215,13 @@ static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
     assert(v != NULL);
     assert(w != NULL);
 
-    int v_ = (*v);
-    int w_ = (*w);
+    int v_ = v->idx;
+    int w_ = w->idx;
 
-    
+    /*
     printf("Comparing %d and %d", v_, w_);
     fflush( stdout );
+    */
 
     int table_absidx = ms->listobject->table_absidx;
 
@@ -235,9 +236,11 @@ static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
     lua_geti(L, table_absidx, v_);
     lua_geti(L, table_absidx, w_);
 
+    /*
     assert(lua_isnil(L, -2) == 0);
     assert(lua_isnil(L, -1) == 0);
-
+    */
+   
     lua_call(L, 2, 1);
 
     int lt = lua_toboolean(L, -1);
@@ -1216,7 +1219,9 @@ static int l_sort(lua_State *L) {
     self.allocated = nel;
 
     for (int i = 0; i < nel; i++) {
-        self.ob_item[i] = &i;   // simply prepare the identity permutation.
+        PyObject *p = (PyObject *) malloc (sizeof(PyObject));
+        p->idx = i + 1;
+        self.ob_item[i] = p;   // simply prepare the identity permutation.
     }
 
     int reverse = lua_toboolean(L, -2);
@@ -1227,16 +1232,18 @@ static int l_sort(lua_State *L) {
         // handle here the error.
     }
     
-    free(self.ob_item);
     self.allocated = 0;
 
     lua_createtable(L, nel, 0);
 
     for (int i = 0; i < nel; i++) {
-        int idx = *(self.ob_item[i]);
+        int idx = self.ob_item[i]->idx;
         lua_geti(L, self.table_absidx, idx);
         lua_seti(L, -2, i + 1);
+        free(self.ob_item[i]);  // release the tmp struct.
     }
+
+    free(self.ob_item); // finally release all the vector.
 
 	return 1;
 }
