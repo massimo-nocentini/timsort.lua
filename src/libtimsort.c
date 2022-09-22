@@ -600,7 +600,6 @@ merge_getmem(MergeState *ms, Py_ssize_t need)
     assert(ms != NULL);
     if (need <= ms->alloced)
         return 0;
-
     
     /* Don't realloc!  That can cost cycles to copy the old data, but
      * we don't care what's in the block.
@@ -1179,7 +1178,8 @@ static int l_sort(lua_State *L) {
     time_t endtime = time(NULL);
 
     if(result == NULL) {
-        // handle here the error.
+        lua_pushstring(L, "timsort error");
+        lua_error(L);
     }
     
     self.allocated = 0;
@@ -1205,7 +1205,7 @@ static const struct luaL_Reg timsort [] = {
 	{NULL, NULL} /* sentinel */
 };
  
-int luaopen_timsort (lua_State *L) {
+int luaopen_libtimsort (lua_State *L) {
 	luaL_newlib(L, timsort);
 	return 1;
 }
