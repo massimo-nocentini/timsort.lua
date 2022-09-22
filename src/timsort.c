@@ -36,7 +36,7 @@ typedef intptr_t  Py_ssize_t;
 typedef struct s_MergeState MergeState;
 
 typedef struct {
-    PyObject ob_base;
+    //PyObject ob_base;
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 
@@ -79,7 +79,6 @@ typedef struct {
 
 typedef struct {
     PyObject **keys;
-    PyObject **values;
 } sortslice;
 
 /* One MergeState exists on the stack per invocation of mergesort.  It's just
@@ -123,16 +122,6 @@ struct s_MergeState {
      * safe_object_compare. */
     int (*key_compare)(PyObject *, PyObject *, MergeState *);
 
-    /* This function is used by unsafe_object_compare to optimize comparisons
-     * when we know our list is type-homogeneous but we can't assume anything else.
-     * In the pre-sort check it is set equal to Py_TYPE(key)->tp_richcompare */
-    PyObject *(*key_richcompare)(PyObject *, PyObject *, int);
-
-    /* This function is used by unsafe_tuple_compare to compare the first elements
-     * of tuples. It may be set to safe_object_compare, but the idea is that hopefully
-     * we can assume more, and use one of the special-case compares. */
-    int (*tuple_elem_compare)(PyObject *, PyObject *, MergeState *);
-
     PyListObject *listobject;
 };
 
@@ -143,6 +132,7 @@ struct s_MergeState {
 /* Largest positive value of type Py_ssize_t. */
 #define PY_SSIZE_T_MAX ((Py_ssize_t)(((size_t)-1)>>1))
 
+/* This work because the *very first* field of PyListObject is a PyVarObject. */
 #define _PyVarObject_CAST(op) ((PyVarObject *)(op))
 
 #define Py_SIZE(ob)             (_PyVarObject_CAST(ob)->ob_size)
@@ -170,72 +160,48 @@ static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 Py_LOCAL_INLINE(void) sortslice_memcpy(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j, Py_ssize_t n)
 {
     memcpy(&s1->keys[i], &s2->keys[j], sizeof(PyObject *) * n);
-    if (s1->values != NULL)
-        memcpy(&s1->values[i], &s2->values[j], sizeof(PyObject *) * n); 
 }
 
 Py_LOCAL_INLINE(void) sortslice_copy_incr(sortslice *dst, sortslice *src)
 {
     *dst->keys++ = *src->keys++;
-    if (dst->values != NULL)
-        *dst->values++ = *src->values++;
 }
 
 Py_LOCAL_INLINE(void) sortslice_advance(sortslice *slice, Py_ssize_t n)
 {
     slice->keys += n;
-    if (slice->values != NULL)
-        slice->values += n;
 }
 
 Py_LOCAL_INLINE(void) sortslice_memmove(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j,
                   Py_ssize_t n)
 {
     memmove(&s1->keys[i], &s2->keys[j], sizeof(PyObject *) * n);
-    if (s1->values != NULL)
-        memmove(&s1->values[i], &s2->values[j], sizeof(PyObject *) * n);
 }
-
 
 Py_LOCAL_INLINE(void) sortslice_copy(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j)
 {
     s1->keys[i] = s2->keys[j];
-    if (s1->values != NULL)
-        s1->values[i] = s2->values[j];
 }
 
 Py_LOCAL_INLINE(void) sortslice_copy_decr(sortslice *dst, sortslice *src)
 {
     *dst->keys-- = *src->keys--;
-    if (dst->values != NULL)
-        *dst->values-- = *src->values--;
 }
 
 static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
-    assert(v != NULL);
-    assert(w != NULL);
-
-    int v_ = v->idx;
-    int w_ = w->idx;
-
-    /*
-    printf("Comparing %d and %d", v_, w_);
-    fflush( stdout );
-    */
-
     int table_absidx = ms->listobject->table_absidx;
 
     lua_State *L = ms->listobject->L;
  
-    assert(lua_istable(L, table_absidx));
+    //assert(lua_istable(L, table_absidx));
 
     lua_pushvalue(L, table_absidx + 2);
 
-    assert(lua_isfunction(L, -1));
+    //assert(lua_isfunction(L, -1));
 
-    lua_geti(L, table_absidx, v_);
-    lua_geti(L, table_absidx, w_);
+    lua_geti(L, table_absidx, v->idx);
+    lua_geti(L, table_absidx, w->idx);
 
     /*
     assert(lua_isnil(L, -2) == 0);
@@ -256,7 +222,6 @@ static void merge_init(MergeState *ms, Py_ssize_t list_size)
 {
     assert(ms != NULL);
     ms->alloced = MERGESTATE_TEMP_SIZE;
-    ms->a.values = NULL;
     ms->a.keys = ms->temparray;
     ms->n = 0;
     ms->min_gallop = MIN_GALLOP;
@@ -353,8 +318,6 @@ fail:
 static void reverse_sortslice(sortslice *s, Py_ssize_t n)
 {
     reverse_slice(s->keys, &s->keys[n]);
-    if (s->values != NULL)
-        reverse_slice(s->values, &s->values[n]);
 }
 
 
@@ -408,15 +371,6 @@ static int binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **st
         for (p = start; p > l; --p)
             *p = *(p-1);
         *l = pivot;
-        if (lo.values != NULL) {
-            Py_ssize_t offset = lo.values - lo.keys;
-            p = start + offset;
-            pivot = *p;
-            l += offset;
-            for (p = start + offset; p > l; --p)
-                *p = *(p-1);
-            *l = pivot;
-        }
     }
     return 0;
 
@@ -643,27 +597,23 @@ void * PyMem_Malloc(size_t size)
 static int
 merge_getmem(MergeState *ms, Py_ssize_t need)
 {
-    int multiplier;
-
     assert(ms != NULL);
     if (need <= ms->alloced)
         return 0;
 
-    multiplier = ms->a.values != NULL ? 2 : 1;
-
+    
     /* Don't realloc!  That can cost cycles to copy the old data, but
      * we don't care what's in the block.
      */
     merge_freemem(ms);
-    if ((size_t)need > PY_SSIZE_T_MAX / sizeof(PyObject *) / multiplier) {
+    if ((size_t)need > PY_SSIZE_T_MAX / sizeof(PyObject *)) {
         //PyErr_NoMemory();
         return -1;
     }
-    ms->a.keys = (PyObject **)PyMem_Malloc(multiplier * need * sizeof(PyObject *));
+    ms->a.keys = (PyObject **)PyMem_Malloc(need * sizeof(PyObject *));
     if (ms->a.keys != NULL) {
         ms->alloced = need;
-        if (ms->a.values != NULL)
-            ms->a.values = &ms->a.keys[need];
+        
         return 0;
     }
     //PyErr_NoMemory();
@@ -827,8 +777,7 @@ static Py_ssize_t merge_hi(MergeState *ms, sortslice ssa, Py_ssize_t na,
     basea = ssa;
     baseb = ms->a;
     ssb.keys = ms->a.keys + nb - 1;
-    if (ssb.values != NULL)
-        ssb.values = ms->a.values + nb - 1;
+    
     sortslice_advance(&ssa, na - 1);
 
     sortslice_copy_decr(&dest, &ssa);
@@ -1067,7 +1016,7 @@ static PyListObject * list_sort_impl(PyListObject *self, int reverse) {
     PyObject **final_ob_item;
     PyListObject *result = NULL;            /* guilty until proved innocent */
 
-    // get the reference to the context we are in, in particular to access the Lua state.
+    // pass the reference to the context we are in, in particular to access the Lua state.
     ms.listobject = self;
 
     /* The list is temporarily made empty, so that mutations performed
@@ -1085,7 +1034,6 @@ static PyListObject * list_sort_impl(PyListObject *self, int reverse) {
     self->allocated = -1; /* any operation will reset it to >= 0 */
     
     lo.keys = saved_ob_item;
-    lo.values = NULL;
 
     ms.key_compare = safe_object_compare;
 
