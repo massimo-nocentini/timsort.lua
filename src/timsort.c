@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <lua.h>
 #include <lauxlib.h>
+#include <time.h>
 
 
 
@@ -240,7 +241,7 @@ static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
     assert(lua_isnil(L, -2) == 0);
     assert(lua_isnil(L, -1) == 0);
     */
-   
+
     lua_call(L, 2, 1);
 
     int lt = lua_toboolean(L, -1);
@@ -251,8 +252,7 @@ static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 }
 
 /* Conceptually a MergeState's constructor. */
-static void
-merge_init(MergeState *ms, Py_ssize_t list_size)
+static void merge_init(MergeState *ms, Py_ssize_t list_size)
 {
     assert(ms != NULL);
     ms->alloced = MERGESTATE_TEMP_SIZE;
@@ -1226,7 +1226,9 @@ static int l_sort(lua_State *L) {
 
     int reverse = lua_toboolean(L, -2);
 
+    time_t starttime = time(NULL);
     PyListObject *result = list_sort_impl(&self, reverse);
+    time_t endtime = time(NULL);
 
     if(result == NULL) {
         // handle here the error.
@@ -1243,9 +1245,11 @@ static int l_sort(lua_State *L) {
         free(self.ob_item[i]);  // release the tmp struct.
     }
 
-    free(self.ob_item); // finally release all the vector.
+    free(self.ob_item); // finally release the all vector.
 
-	return 1;
+    lua_pushinteger(L, endtime - starttime);
+
+	return 2;
 }
 
 static const struct luaL_Reg timsort [] = {
