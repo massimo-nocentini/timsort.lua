@@ -1,6 +1,6 @@
 # timsortlua
 
-This repository contains a `timsort` Lua module that provides a `sort` function as an auxiliary sorting algorithm based on https://en.wikipedia.org/wiki/Timsort.
+This repository contains a `timsort` Lua module that provides a `sort` function as an auxiliary sorting algorithm based on https://en.wikipedia.org/wiki/Timsort and, more in particular, on [listsort.txt](https://github.com/python/cpython/blob/b4f5f07d076d7e7d825306981108dbb7120d7377/Objects/listsort.txt) (which we copy under the root directory).
 
 ## libtimsort
 
