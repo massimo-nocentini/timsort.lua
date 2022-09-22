@@ -1,5 +1,5 @@
 
-local timsort = require 'libtimsort'
+local timsort = require 'timsort'
 
 local tbl = {}
 local n = math.tointeger(1e7)
