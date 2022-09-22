@@ -5,7 +5,7 @@ local timsort = {}
 
 setmetatable(timsort, { __index = libtimsort })
 
-function timsort.sort (tbl, reverse, C)
+function timsort.sort (tbl, C, reverse)
 
     reverse = reverse or false
     C = C or function (a, b) return a < b end

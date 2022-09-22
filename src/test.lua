@@ -15,7 +15,7 @@ local function C (a, b)
     return a < b
 end
 
-local sorted, elapsed = timsort.sort(tbl, false, C)
+local sorted, elapsed = timsort.sort(tbl, C)
 
 print(string.format('timsort.sort: %d seconds', elapsed))
 
