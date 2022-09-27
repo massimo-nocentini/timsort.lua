@@ -29,7 +29,7 @@
 /* Avoid malloc for small temp arrays. */
 #define MERGESTATE_TEMP_SIZE 256
 
-typedef struct { int idx; }  PyObject;
+typedef int   PyObject;
 
 typedef intptr_t  Py_ssize_t;
 
@@ -44,7 +44,7 @@ typedef struct {
     PyVarObject ob_base;
     
     /* Vector of pointers to list elements.  list[0] is ob_item[0], etc. */
-    PyObject **ob_item;
+    PyObject *ob_item;
 
     /* ob_item contains space for 'allocated' elements.  The number
      * currently in use is ob_size.
@@ -78,7 +78,7 @@ typedef struct {
  */
 
 typedef struct {
-    PyObject **keys;
+    PyObject *keys;
 } sortslice;
 
 /* One MergeState exists on the stack per invocation of mergesort.  It's just
@@ -115,12 +115,12 @@ struct s_MergeState {
     struct s_slice pending[MAX_MERGE_PENDING];
 
     /* 'a' points to this when possible, rather than muck with malloc. */
-    PyObject *temparray[MERGESTATE_TEMP_SIZE];
+    PyObject temparray[MERGESTATE_TEMP_SIZE];
 
     /* This is the function we will use to compare two keys,
      * even when none of our special cases apply and we have to use
      * safe_object_compare. */
-    int (*key_compare)(PyObject *, PyObject *, MergeState *);
+    int (*key_compare)(PyObject , PyObject , MergeState *);
 
     PyListObject *listobject;
 };
@@ -159,7 +159,7 @@ static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 
 Py_LOCAL_INLINE(void) sortslice_memcpy(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j, Py_ssize_t n)
 {
-    memcpy(&s1->keys[i], &s2->keys[j], sizeof(PyObject *) * n);
+    memcpy(&s1->keys[i], &s2->keys[j], sizeof(PyObject ) * n);
 }
 
 Py_LOCAL_INLINE(void) sortslice_copy_incr(sortslice *dst, sortslice *src)
@@ -175,7 +175,7 @@ Py_LOCAL_INLINE(void) sortslice_advance(sortslice *slice, Py_ssize_t n)
 Py_LOCAL_INLINE(void) sortslice_memmove(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j,
                   Py_ssize_t n)
 {
-    memmove(&s1->keys[i], &s2->keys[j], sizeof(PyObject *) * n);
+    memmove(&s1->keys[i], &s2->keys[j], sizeof(PyObject ) * n);
 }
 
 Py_LOCAL_INLINE(void) sortslice_copy(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j)
@@ -188,7 +188,7 @@ Py_LOCAL_INLINE(void) sortslice_copy_decr(sortslice *dst, sortslice *src)
     *dst->keys-- = *src->keys--;
 }
 
-static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
+static int safe_object_compare(PyObject v, PyObject w, MergeState *ms)
 {
     int table_absidx = ms->listobject->table_absidx;
 
@@ -200,8 +200,8 @@ static int safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 
     //assert(lua_isfunction(L, -1));
 
-    lua_geti(L, table_absidx, v->idx);
-    lua_geti(L, table_absidx, w->idx);
+    lua_geti(L, table_absidx, v);
+    lua_geti(L, table_absidx, w);
 
     /*
     assert(lua_isnil(L, -2) == 0);
@@ -228,13 +228,13 @@ static void merge_init(MergeState *ms, Py_ssize_t list_size)
 }
 
 /* Reverse a slice of a list in place, from lo up to (exclusive) hi. */
-static void reverse_slice(PyObject **lo, PyObject **hi)
+static void reverse_slice(PyObject *lo, PyObject *hi)
 {
     assert(lo && hi);
 
     --hi;
     while (lo < hi) {
-        PyObject *t = *lo;
+        PyObject t = *lo;
         *lo = *hi;
         *hi = t;
         ++lo;
@@ -282,7 +282,7 @@ elements to get out of order).
 
 Returns -1 in case of error.
 */
-static Py_ssize_t count_run(MergeState *ms, PyObject **lo, PyObject **hi, int *descending)
+static Py_ssize_t count_run(MergeState *ms, PyObject *lo, PyObject *hi, int *descending)
 {
     Py_ssize_t k;
     Py_ssize_t n;
@@ -332,11 +332,11 @@ static void reverse_sortslice(sortslice *s, Py_ssize_t n)
    Even in case of error, the output slice will be some permutation of
    the input (nothing is lost or duplicated).
 */
-static int binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **start)
+static int binarysort(MergeState *ms, sortslice lo, PyObject *hi, PyObject *start)
 {
     Py_ssize_t k;
-    PyObject **l, **p, **r;
-    PyObject *pivot;
+    PyObject *l, *p, *r;
+    PyObject pivot;
 
     assert(lo.keys <= start && start <= hi);
     /* assert [lo, start) is sorted */
@@ -400,7 +400,7 @@ key, and the last n-k should follow key.
 
 Returns -1 on error.  See listsort.txt for info on the method.
 */
-static Py_ssize_t gallop_left(MergeState *ms, PyObject *key, PyObject **a, Py_ssize_t n, Py_ssize_t hint)
+static Py_ssize_t gallop_left(MergeState *ms, PyObject key, PyObject *a, Py_ssize_t n, Py_ssize_t hint)
 {
     Py_ssize_t ofs;
     Py_ssize_t lastofs;
@@ -488,7 +488,7 @@ The code duplication is massive, but this is enough different given that
 we're sticking to "<" comparisons that it's much harder to follow if
 written as one routine with yet another "left or right?" flag.
 */
-static Py_ssize_t gallop_right (MergeState *ms, PyObject *key, PyObject **a, Py_ssize_t n, Py_ssize_t hint)
+static Py_ssize_t gallop_right (MergeState *ms, PyObject key, PyObject *a, Py_ssize_t n, Py_ssize_t hint)
 {
     Py_ssize_t ofs;
     Py_ssize_t lastofs;
@@ -605,11 +605,11 @@ merge_getmem(MergeState *ms, Py_ssize_t need)
      * we don't care what's in the block.
      */
     merge_freemem(ms);
-    if ((size_t)need > PY_SSIZE_T_MAX / sizeof(PyObject *)) {
+    if ((size_t)need > PY_SSIZE_T_MAX / sizeof(PyObject )) {
         //PyErr_NoMemory();
         return -1;
     }
-    ms->a.keys = (PyObject **)PyMem_Malloc(need * sizeof(PyObject *));
+    ms->a.keys = (PyObject *)PyMem_Malloc(need * sizeof(PyObject ));
     if (ms->a.keys != NULL) {
         ms->alloced = need;
         
@@ -1011,8 +1011,8 @@ static PyListObject * list_sort_impl(PyListObject *self, int reverse) {
     Py_ssize_t minrun;
     sortslice lo;
     Py_ssize_t saved_ob_size, saved_allocated;
-    PyObject **saved_ob_item;
-    PyObject **final_ob_item;
+    PyObject *saved_ob_item;
+    PyObject *final_ob_item;
     PyListObject *result = NULL;            /* guilty until proved innocent */
 
     // pass the reference to the context we are in, in particular to access the Lua state.
@@ -1161,14 +1161,12 @@ static int l_sort(lua_State *L) {
     int nel = lua_tointeger(L, -1); // get that number.
     lua_pop(L, 1);                  // clean the stack.
 
-    self.ob_item = (PyObject **) malloc (sizeof(PyObject *) * nel);
+    self.ob_item = (PyObject *) malloc (sizeof(PyObject ) * nel);
     self.ob_base.ob_size = nel;
     self.allocated = nel;
 
     for (int i = 0; i < nel; i++) {
-        PyObject *p = (PyObject *) malloc (sizeof(PyObject));
-        p->idx = i + 1;
-        self.ob_item[i] = p;   // simply prepare the identity permutation.
+        self.ob_item[i] = i + 1;   // simply prepare the identity permutation.
     }
 
     int reverse = lua_toboolean(L, -2);
@@ -1187,10 +1185,9 @@ static int l_sort(lua_State *L) {
     lua_createtable(L, nel, 0);
 
     for (int i = 0; i < nel; i++) {
-        int idx = self.ob_item[i]->idx;
+        int idx = self.ob_item[i];
         lua_geti(L, self.table_absidx, idx);
         lua_seti(L, -2, i + 1);
-        free(self.ob_item[i]);  // release the tmp struct.
     }
 
     free(self.ob_item); // finally release the all vector.
