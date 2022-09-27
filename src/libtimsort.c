@@ -117,11 +117,6 @@ struct s_MergeState {
     /* 'a' points to this when possible, rather than muck with malloc. */
     PyObject temparray[MERGESTATE_TEMP_SIZE];
 
-    /* This is the function we will use to compare two keys,
-     * even when none of our special cases apply and we have to use
-     * safe_object_compare. */
-    int (*key_compare)(PyObject , PyObject , MergeState *);
-
     PyListObject *listobject;
 };
 
@@ -143,18 +138,11 @@ static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 
 #define Py_SET_SIZE(ob, size) _Py_SET_SIZE(_PyVarObject_CAST(ob), size)
 
-/* Comparison function: ms->key_compare, which is set at run-time in
- * listsort_impl to optimize for various special cases.
- * Returns -1 on error, 1 if x < y, 0 if x >= y.
- */
-
-#define ISLT(X, Y) (*(ms->key_compare))(X, Y, ms)
-
 /* Compare X to Y via "<".  Goto "fail" if the comparison raises an
    error.  Else "k" is set to true iff X<Y, and an "if (k)" block is
    started.  It makes more sense in context <wink>.  X and Y are PyObject*s.
 */
-#define IFLT(X, Y) if ((k = ISLT(X, Y)) < 0) goto fail;  \
+#define IFLT(X, Y) if ((k = safe_object_compare(X, Y, ms)) < 0) goto fail;  \
            if (k)
 
 Py_LOCAL_INLINE(void) sortslice_memcpy(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j, Py_ssize_t n)
@@ -320,7 +308,6 @@ static void reverse_sortslice(sortslice *s, Py_ssize_t n)
     reverse_slice(s->keys, &s->keys[n]);
 }
 
-
 /* binarysort is the best method for sorting small arrays: it does
    few compares, but can do data movement quadratic in the number of
    elements.
@@ -328,7 +315,7 @@ static void reverse_sortslice(sortslice *s, Py_ssize_t n)
    binary insertion.  This sort is stable.
    On entry, must have lo <= start <= hi, and that [lo, start) is already
    sorted (pass start == lo if you don't know!).
-   If islt() complains return -1, else 0.
+   If safe_object_compare(...) complains return -1, else 0.
    Even in case of error, the output slice will be some permutation of
    the input (nothing is lost or duplicated).
 */
@@ -659,7 +646,7 @@ merge_lo(MergeState *ms, sortslice ssa, Py_ssize_t na,
          */
         for (;;) {
             assert(na > 1 && nb > 0);
-            k = ISLT(ssb.keys[0], ssa.keys[0]);
+            k = safe_object_compare(ssb.keys[0], ssa.keys[0], ms);
             if (k) {
                 if (k < 0)
                     goto Fail;
@@ -796,7 +783,7 @@ static Py_ssize_t merge_hi(MergeState *ms, sortslice ssa, Py_ssize_t na,
          */
         for (;;) {
             assert(na > 0 && nb > 1);
-            k = ISLT(ssb.keys[0], ssa.keys[0]);
+            k = safe_object_compare(ssb.keys[0], ssa.keys[0], ms);
             if (k) {
                 if (k < 0)
                     goto Fail;
@@ -1033,8 +1020,6 @@ static PyListObject * list_sort_impl(PyListObject *self, int reverse) {
     self->allocated = -1; /* any operation will reset it to >= 0 */
     
     lo.keys = saved_ob_item;
-
-    ms.key_compare = safe_object_compare;
 
     merge_init(&ms, saved_ob_size);
 
