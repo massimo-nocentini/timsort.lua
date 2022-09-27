@@ -36,12 +36,7 @@ typedef intptr_t Py_ssize_t;
 typedef struct s_MergeState MergeState;
 
 typedef struct {
-    //PyObject ob_base;
-    Py_ssize_t ob_size; /* Number of items in variable part */
-} PyVarObject;
-
-typedef struct {
-    PyVarObject ob_base;
+    Py_ssize_t ob_size;
     
     /* Vector of pointers to list elements.  list[0] is ob_item[0], etc. */
     PyObject *ob_item;
@@ -126,23 +121,11 @@ struct s_MergeState {
 /* Largest positive value of type Py_ssize_t. */
 #define PY_SSIZE_T_MAX ((Py_ssize_t)(((size_t)-1)>>1))
 
-/* This work because the *very first* field of PyListObject is a PyVarObject. */
-#define _PyVarObject_CAST(op) ((PyVarObject *)(op))
-
-#define Py_SIZE(ob)             (_PyVarObject_CAST(ob)->ob_size)
-
-static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
-    ob->ob_size = size;
-}
-
-#define Py_SET_SIZE(ob, size) _Py_SET_SIZE(_PyVarObject_CAST(ob), size)
-
 /* Compare X to Y via "<".  Goto "fail" if the comparison raises an
    error.  Else "k" is set to true iff X<Y, and an "if (k)" block is
    started.  It makes more sense in context <wink>.  X and Y are PyObject*s.
 */
-#define IFLT(X, Y) if ((k = safe_object_compare(X, Y, ms)) < 0) goto fail;  \
-           if (k)
+#define IFLT(X, Y) if ((k = safe_object_compare(X, Y, ms)) < 0) goto fail; if (k)
 
 Py_LOCAL_INLINE(void) sortslice_memcpy(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j, Py_ssize_t n)
 {
@@ -159,8 +142,7 @@ Py_LOCAL_INLINE(void) sortslice_advance(sortslice *slice, Py_ssize_t n)
     *slice += n;
 }
 
-Py_LOCAL_INLINE(void) sortslice_memmove(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j,
-                  Py_ssize_t n)
+Py_LOCAL_INLINE(void) sortslice_memmove(sortslice *s1, Py_ssize_t i, sortslice *s2, Py_ssize_t j, Py_ssize_t n)
 {
     memmove(*s1 + i, *s2 + j, sizeof(PyObject ) * n);
 }
@@ -175,7 +157,7 @@ Py_LOCAL_INLINE(void) sortslice_copy_decr(sortslice *dst, sortslice *src)
     *(*dst)-- = *(*src)--;
 }
 
-static int safe_object_compare(PyObject v, PyObject w, MergeState *ms)
+Py_LOCAL_INLINE(int) safe_object_compare(PyObject v, PyObject w, MergeState *ms)
 {
     int table_absidx = ms->listobject->table_absidx;
 
@@ -611,9 +593,7 @@ merge_getmem(MergeState *ms, Py_ssize_t need)
  * should have na <= nb.  See listsort.txt for more info.  Return 0 if
  * successful, -1 if error.
  */
-static Py_ssize_t
-merge_lo(MergeState *ms, sortslice ssa, Py_ssize_t na,
-         sortslice ssb, Py_ssize_t nb)
+static Py_ssize_t merge_lo(MergeState *ms, sortslice ssa, Py_ssize_t na, sortslice ssb, Py_ssize_t nb)
 {
     Py_ssize_t k;
     sortslice dest;
@@ -744,8 +724,7 @@ CopyB:
  * should have na >= nb.  See listsort.txt for more info.  Return 0 if
  * successful, -1 if error.
  */
-static Py_ssize_t merge_hi(MergeState *ms, sortslice ssa, Py_ssize_t na,
-         sortslice ssb, Py_ssize_t nb)
+static Py_ssize_t merge_hi(MergeState *ms, sortslice ssa, Py_ssize_t na, sortslice ssb, Py_ssize_t nb)
 {
     Py_ssize_t k;
     sortslice dest, basea, baseb;
@@ -1009,12 +988,12 @@ static PyListObject * list_sort_impl(PyListObject *self, int reverse) {
      * sorting (allowing mutations during sorting is a core-dump
      * factory, since ob_item may change).
      */
-    saved_ob_size = Py_SIZE(self);
+    saved_ob_size = self->ob_size;
     saved_ob_item = self->ob_item;
     saved_allocated = self->allocated;
     assert(saved_allocated == saved_ob_size);
 
-    Py_SET_SIZE(self, 0);
+    self->ob_size = 0;
     self->ob_item = NULL;
     self->allocated = -1; /* any operation will reset it to >= 0 */
     
@@ -1090,7 +1069,7 @@ fail:
 
 //keyfunc_fail:
     final_ob_item = self->ob_item;
-    Py_SET_SIZE(self, saved_ob_size);
+    self->ob_size = saved_ob_size;
     self->ob_item = saved_ob_item;
     self->allocated = saved_allocated;
     if (final_ob_item != NULL) {
@@ -1146,7 +1125,7 @@ static int l_sort(lua_State *L) {
     lua_pop(L, 1);                  // clean the stack.
 
     self.ob_item = (PyObject *) malloc (sizeof(PyObject ) * nel);
-    self.ob_base.ob_size = nel;
+    self.ob_size = nel;
     self.allocated = nel;
 
     for (int i = 0; i < nel; i++) {
