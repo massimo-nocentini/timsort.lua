@@ -8,7 +8,7 @@ This repository has two separate folder both for sources and lua test scripts, e
 
 ### `src/libtimsort.c`
 
-The implementation is *totally based* and strictly follows the Python one, namely https://github.com/python/cpython/blob/b4f5f07d076d7e7d825306981108dbb7120d7377/Objects/listobject.c#L2251. For the sake of clarity, we copy the necessary functions and type definitions from the Python's C implementation and remove some details to make it compile as a Lua module. We do not do **any** change to the original algorithm; after all, consider this project as a way to distill the Tim's sorting core functions from the Python C file about `list` objects.
+The implementation is *totally based* and strictly follows the Python one, namely https://github.com/python/cpython/blob/b4f5f07d076d7e7d825306981108dbb7120d7377/Objects/listobject.c#L2251. For the sake of clarity, we copy the necessary functions and type definitions from the Python's C implementation and remove some details to make it compile as a Lua module. We do not do **any** change to the original algorithm; after all, consider this project as a way to distill the Tim's sorting core functions from the Python C file about `list` objects (in fact, many names in the implementation maintain the prefix `Py`).
 
 ### `src/timsort.lua`
 
