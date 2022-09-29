@@ -1099,11 +1099,16 @@ static int l_sort(lua_State *L) {
         lua_error(L);
     }
 
-    lua_createtable(L, nel, 0);
+    lua_createtable(L, nel, 0);	// the sorted table
+    lua_createtable(L, nel, 0);	// the sorting permutation
 
     for (int i = 0; i < nel; i++) {
         int idx = self.ob_item[i];
+
         lua_geti(L, self.table_absidx, idx);
+        lua_seti(L, -3, i + 1);
+
+	lua_pushinteger(L, idx);	// to also provide the sorting permutation.
         lua_seti(L, -2, i + 1);
     }
 
@@ -1111,7 +1116,7 @@ static int l_sort(lua_State *L) {
 
     lua_pushinteger(L, endtime - starttime);
 
-	return 2;
+    return 3;
 }
 
 static const struct luaL_Reg timsort [] = {

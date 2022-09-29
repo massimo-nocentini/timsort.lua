@@ -10,7 +10,8 @@ end
 
 print(table.concat(tbl, ', '))
 
-local sorted = timsort.sort(tbl)
+local sorted, perm = timsort.sort(tbl)
 
 print(table.concat(sorted, ', '))
+print(table.concat(perm, ', '))
 
