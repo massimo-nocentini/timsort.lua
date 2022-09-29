@@ -2,7 +2,7 @@
 
 This repository contains a `timsort` Lua module that provides a `sort` function as an auxiliary sorting algorithm based on https://en.wikipedia.org/wiki/Timsort and, more in particular, on [listsort.txt](https://github.com/python/cpython/blob/master/Objects/listsort.txt).
 
-It is interesting to point out the reading of http://www.envisage-project.eu/proving-android-java-and-python-sorting-algorithm-is-broken-and-how-to-fix-it/ found in the [README.md](https://github.com/tvanslyke/timsort-cpp#readme) of [@tvanslyke](https://github.com/tvanslyke).
+For what concerns computational times, it is interesting to point out the reading of http://www.envisage-project.eu/proving-android-java-and-python-sorting-algorithm-is-broken-and-how-to-fix-it/ found in the [README.md](https://github.com/tvanslyke/timsort-cpp#readme) of [@tvanslyke](https://github.com/tvanslyke).
 
 ## Under the hood
 
@@ -10,7 +10,7 @@ This repository has two separate folder both for sources and lua test scripts, e
 
 ### [`src/libtimsort.c`](https://github.com/massimo-nocentini/timsort.lua/blob/master/src/libtimsort.c)
 
-The implementation is *totally based* and strictly follows the Python one, namely https://github.com/python/cpython/blob/master/Objects/listobject.c#L2251. For the sake of clarity, we copy the necessary functions and type definitions from the Python's C implementation and remove some details to make it compile as a Lua module. We do not do **any** change to the original algorithm; after all, consider this project as a way to distill the Tim's sorting core functions from the Python C file about `list` objects (in fact, many names in the implementation maintain the prefix `Py`).
+The implementation is *totally based* and strictly follows the Python one, namely https://github.com/python/cpython/blob/master/Objects/listobject.c#L2251. For the sake of clarity, we copy the necessary functions and type definitions from the Python's C implementation and remove some details to make it compile as a Lua module. We do not do **any** change to the original algorithm. On one hand, we just renamed and defined `typedef`s to make it readable outside of the Python context; On the other hand, let consider this project as a way to distill the Tim's sorting core functions from the Python C file about `list` objects.
 
 ### [`src/timsort.lua`](https://github.com/massimo-nocentini/timsort.lua/blob/master/src/timsort.lua)
 
@@ -55,3 +55,13 @@ $ lua simple.lua
 10, 1, 7, 8, 9, 15, 2, 18, 11, 12, 13, 14, 17, 16, 5, 4, 19, 3, 6, 20
 
 ```
+
+A more involving examples can be found in `src/linear.lua` where a huge array is populated with integers in increasing order according to a biased coin, in case of tail just sample a random number. Such examples produces the following output,
+```lua
+$ lua linear.lua 
+timsort.sort: 9 seconds
+timsort.sort (reversed): 10 seconds
+table.sort: 17 seconds
+Same order checked.
+```
+showing the performance gain with respect to `table.sort` in the presence of *runs*.
