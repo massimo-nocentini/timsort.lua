@@ -30,6 +30,7 @@ It is mandatory to compile by typing `make`, no more deps that default unix buil
 
 Consider the script `src/simple.lua` that reads as follows:
 ```lua
+
 local timsort = require 'timsort'
 
 local tbl = {}
@@ -41,13 +42,16 @@ end
 
 print(table.concat(tbl, ', '))
 
-local sorted = timsort.sort(tbl)
+local sorted, perm = timsort.sort(tbl)
 
 print(table.concat(sorted, ', '))
+print(table.concat(perm, ', '))
 ```
 and running it yields:
 ```bash
-$ lua simple.lua 
-10, 9, 17, 19, 20, 16, 5, 4, 19, 9, 13, 8, 17, 9, 3, 3, 19, 18, 1, 12
-1, 3, 3, 4, 5, 8, 9, 9, 9, 10, 12, 13, 16, 17, 17, 18, 19, 19, 19, 20
+$ lua simple.lua
+2, 3, 18, 16, 13, 20, 2, 2, 2, 1, 6, 7, 7, 8, 2, 11, 8, 3, 17, 20
+1, 2, 2, 2, 2, 2, 3, 3, 6, 7, 7, 8, 8, 11, 13, 16, 17, 18, 20, 20
+10, 1, 7, 8, 9, 15, 2, 18, 11, 12, 13, 14, 17, 16, 5, 4, 19, 3, 6, 20
+
 ```
