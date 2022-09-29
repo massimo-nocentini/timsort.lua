@@ -20,15 +20,12 @@ local sortedtbl = timsort.sort (tbl, C, reverse)
 ```
 means that `sortedtbl` contains the same elements contained in `tbl` but in a different order according to the comparison function `C`, possibly reversed if `reverse` is `true`. By the way, `tbl` is never modified and if `C` is not given then `<` is used for it; finally, if `reverse` is not given then `false` is used for it.
 
-## Usage
-
-### Compilation
+## Compilation and testing
 
 It is mandatory to compile by typing `make`, no more deps that default unix build tools.
 
-### Testing
+### [`test/simple.lua`](https://github.com/massimo-nocentini/timsort.lua/blob/master/test/simple.lua)
 
-Consider the script `src/simple.lua` that reads as follows:
 ```lua
 
 local timsort = require 'timsort'
@@ -56,7 +53,9 @@ $ lua simple.lua
 
 ```
 
-A more involving examples can be found in `src/linear.lua` where a huge array is populated with integers in increasing order according to a biased coin, in case of tail just sample a random number. Such examples produces the following output,
+### [`test/linear.lua`](https://github.com/massimo-nocentini/timsort.lua/blob/master/test/linear.lua)
+
+A more involving examples where a huge array is populated with integers in increasing order according to a biased coin, in case of tail just sample a random number. Such examples produces the following output,
 ```lua
 $ lua linear.lua 
 timsort.sort: 9 seconds
@@ -64,4 +63,4 @@ timsort.sort (reversed): 10 seconds
 table.sort: 17 seconds
 Same order checked.
 ```
-showing the performance gain with respect to `table.sort` in the presence of *runs*.
+showing the performance gain with respect to `table.sort` in the presence of *runs*, namely sequences of already ordered elements.
