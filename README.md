@@ -1,6 +1,6 @@
 # timsort.lua
 
-This repository contains a `timsort` Lua module that provides a `sort` function as an auxiliary sorting algorithm based on https://en.wikipedia.org/wiki/Timsort and, more in particular, on [listsort.txt](https://github.com/python/cpython/blob/master/Objects/listsort.txt) (which we copy under the root directory).
+This repository contains a `timsort` Lua module that provides a `sort` function as an auxiliary sorting algorithm based on https://en.wikipedia.org/wiki/Timsort and, more in particular, on [listsort.txt](https://github.com/python/cpython/blob/master/Objects/listsort.txt).
 
 It is interesting to point out the reading of http://www.envisage-project.eu/proving-android-java-and-python-sorting-algorithm-is-broken-and-how-to-fix-it/ found in the [README.md](https://github.com/tvanslyke/timsort-cpp#readme) of @tvanslyke.
 
