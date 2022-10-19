@@ -1,6 +1,10 @@
 
 linux:
-	gcc -O2 -std=gnu99 -fPIC -Wall -g -I/usr/local/include/ -s -shared -o \
+	gcc -O2 -std=gnu99 -fPIC -Wall -I/usr/local/include/ -s -shared -o \
+		libtimsort.so libtimsort.c -L/usr/local/lib/ -llua 
+
+macos:
+	gcc -O2 -std=gnu99 -fPIC -Wall -I/usr/local/include/ -dynamiclib -o \
 		libtimsort.so libtimsort.c -L/usr/local/lib/ -llua 
 
 install:
