@@ -1,5 +1,5 @@
 
-local libtimsort = require 'libtimsort'
+local libtimsort = require 'libluatimsort'
 
 local timsort = {}
 
