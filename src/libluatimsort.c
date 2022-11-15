@@ -79,7 +79,10 @@ static int l_sort(lua_State *L) {
 	    lua_pushinteger(L, idx);	// to also provide the sorting permutation.
         lua_seti(L, -2, i + 1);
     }
+
     lua_pushinteger(L, endtime - starttime);
+
+    free (perm);
 
     return 3;
 }
