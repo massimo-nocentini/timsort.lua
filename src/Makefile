@@ -16,3 +16,6 @@ install-macos:
 	mkdir -p /usr/local/share/lua/5.4/	# just for ensuring that the dest dir exists
 	mv libluatimsort.dylib /usr/local/lib/lua/5.4/
 	cp timsort.lua /usr/local/share/lua/5.4/
+
+test:
+	cd ../test && lua linear.lua && lua simple.lua && lua test.lua
